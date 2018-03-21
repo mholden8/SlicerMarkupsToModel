@@ -3,26 +3,33 @@
 #include "vtkMRMLModelNode.h"
 #include "vtkMRMLMarkupsFiducialNode.h"
 
+#include <vtkAppendPolyData.h>
 #include <vtkButterflySubdivisionFilter.h>
+#include <vtkCellArray.h>
 #include <vtkCleanPolyData.h>
 #include <vtkCubeSource.h>
 #include <vtkDataSetSurfaceFilter.h>
 #include <vtkDelaunay3D.h>
+#include <vtkDelaunay2D.h>
 #include <vtkGlyph3D.h>
+#include <vtkFeatureEdges.h>
 #include <vtkLinearSubdivisionFilter.h>
 #include <vtkLineSource.h>
 #include <vtkNew.h>
 #include <vtkOBBTree.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkRegularPolygonSource.h>
+#include <vtkStripper.h>
 #include <vtkTransform.h>
 #include <vtkTransformFilter.h>
+#include <vtkTransformPolyDataFilter.h>
+#include <vtkTriangle.h>
 #include <vtkUnstructuredGrid.h>
 
 //------------------------------------------------------------------------------
 // constants within this file
 static const double COMPARE_TO_ZERO_TOLERANCE = 0.0001;
-static const double MINIMUM_SURFACE_EXTRUSION_AMOUNT = 0.01; // if a surface is flat/linear, give it at least this much depth
+static const double MINIMUM_DEGENERATE_SURFACE_EXTRUSION_AMOUNT = 0.01; // if a surface is flat/linear, give it at least this much depth
 
 //------------------------------------------------------------------------------
 vtkStandardNewMacro( vtkSlicerMarkupsToModelClosedSurfaceGeneration );
@@ -38,7 +45,7 @@ vtkSlicerMarkupsToModelClosedSurfaceGeneration::~vtkSlicerMarkupsToModelClosedSu
 }
 
 //------------------------------------------------------------------------------
-bool vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateClosedSurfaceModel(vtkPoints* inputPoints, vtkPolyData* outputPolyData,
+bool vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateDelaunayClosedSurfaceModel(vtkPoints* inputPoints, vtkPolyData* outputPolyData,
   double delaunayAlpha, bool smoothing, bool forceConvex)
 {  
   if (inputPoints == NULL)
@@ -92,73 +99,23 @@ bool vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateClosedSurfaceModel(
   {
     case POINT_ARRANGEMENT_SINGULAR:
     {
-      vtkSmartPointer<vtkCubeSource> cubeSource = vtkSmartPointer<vtkCubeSource>::New();
-      // there is only one point, we cannot compute extent or extrusion from this.
-      double extrusionMagnitude = MINIMUM_SURFACE_EXTRUSION_AMOUNT;
-      if ( numberOfPoints > 1 )
-      {
-        vtkGenericWarningMacro( "There is more than one input point, but they form a singularity. " <<
-                                "Giving depth of " << MINIMUM_SURFACE_EXTRUSION_AMOUNT << "." );
-      }
-      cubeSource->SetBounds(-extrusionMagnitude, extrusionMagnitude,
-        -extrusionMagnitude, extrusionMagnitude,
-        -extrusionMagnitude, extrusionMagnitude);
-
       vtkSmartPointer<vtkGlyph3D> glyph = vtkSmartPointer<vtkGlyph3D>::New();
-      glyph->SetSourceConnection(cubeSource->GetOutputPort());
-      glyph->SetInputData(inputPolyData);
-      glyph->Update();
-
+      GetPointArrangementSingularGlyph(inputPolyData, glyph, numberOfPoints);
       delaunay->SetInputConnection(glyph->GetOutputPort());
-
       break;
     }
     case POINT_ARRANGEMENT_LINEAR:
     {
-      // draw a "square" around the line (make it a rectangular prism)
-      vtkSmartPointer<vtkRegularPolygonSource> squareSource = vtkSmartPointer<vtkRegularPolygonSource>::New();
-      squareSource->SetCenter(0.0, 0.0, 0.0);
-      double extrusionMagnitude = ComputeSurfaceExtrusionAmount(smallestBoundingExtentRanges); // need to give some depth
-      squareSource->SetRadius(extrusionMagnitude);
-      squareSource->SetNumberOfSides(4);
-      double lineAxis[3] = { 0.0, 0.0, 0.0 }; // temporary values
-      const int LINE_AXIS_INDEX = 0; // The largest (and only meaningful) axis is in the 0th column
-      // the bounding axes are stored in the columns of transformFromBoundingAxes
-      GetNthColumnInMatrix(boundingAxesToRasTransformMatrix, LINE_AXIS_INDEX, lineAxis);
-      squareSource->SetNormal(lineAxis);
-
       vtkSmartPointer<vtkGlyph3D> glyph = vtkSmartPointer<vtkGlyph3D>::New();
-      glyph->SetSourceConnection(squareSource->GetOutputPort());
-      glyph->SetInputData(inputPolyData);
-      glyph->Update();
-
+      GetPointArrangementLinearGlyph(inputPolyData, glyph, smallestBoundingExtentRanges, boundingAxesToRasTransformMatrix);
       delaunay->SetInputConnection(glyph->GetOutputPort());
-
       break;
     }
     case POINT_ARRANGEMENT_PLANAR:
     {
-      // extrude additional points on either side of the plane
-      vtkSmartPointer<vtkLineSource> lineSource = vtkSmartPointer<vtkLineSource>::New();
-      double planeNormal[3] = { 0.0, 0.0, 0.0 }; // temporary values
-      const int PLANE_NORMAL_INDEX = 2; // The plane normal has the smallest variation, and is stored in the last column
-      // the bounding axes are stored in the columns of transformFromBoundingAxes
-      GetNthColumnInMatrix(boundingAxesToRasTransformMatrix, PLANE_NORMAL_INDEX, planeNormal);
-      double extrusionMagnitude = ComputeSurfaceExtrusionAmount(smallestBoundingExtentRanges); // need to give some depth
-      double point1[3] = { planeNormal[0], planeNormal[1], planeNormal[2] };
-      vtkMath::MultiplyScalar(point1, extrusionMagnitude);
-      lineSource->SetPoint1(point1);
-      double point2[3] = { planeNormal[0], planeNormal[1], planeNormal[2] };
-      vtkMath::MultiplyScalar(point2, -extrusionMagnitude);
-      lineSource->SetPoint2(point2);
-
       vtkSmartPointer<vtkGlyph3D> glyph = vtkSmartPointer<vtkGlyph3D>::New();
-      glyph->SetSourceConnection(lineSource->GetOutputPort());
-      glyph->SetInputData(inputPolyData);
-      glyph->Update();
-
+      GetPointArrangementPlanarGlyph(inputPolyData, glyph, smallestBoundingExtentRanges, boundingAxesToRasTransformMatrix);
       delaunay->SetInputConnection(glyph->GetOutputPort());
-
       break;
     }
     case POINT_ARRANGEMENT_NONPLANAR:
@@ -210,6 +167,93 @@ bool vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateClosedSurfaceModel(
   normals->Update();
 
   outputPolyData->DeepCopy(normals->GetOutput());
+  return true;
+}
+
+//------------------------------------------------------------------------------
+bool vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateExtrusionClosedSurfaceModel(vtkPoints* inputPoints, vtkPolyData* outputPolyData,
+  double extrusionDepth)
+{  
+  if (inputPoints == NULL)
+  {
+    vtkGenericWarningMacro("Input points are null. No model generated.");
+    return false;
+  }
+  
+  if (outputPolyData == NULL)
+  {
+    vtkGenericWarningMacro("Output poly data is null. No model generated.");
+    return false;
+  }
+
+  int numberOfPoints = inputPoints->GetNumberOfPoints();
+  if (numberOfPoints == 0)
+  {
+    // No markup points, the output should be empty
+    return true;
+  }
+
+  vtkSmartPointer< vtkPolyData > inputPolyData = vtkSmartPointer< vtkPolyData >::New();
+  GetPolyDataFromPoints( inputPoints, inputPolyData );
+
+  vtkSmartPointer< vtkMatrix4x4 > boundingAxesToRasTransformMatrix = vtkSmartPointer< vtkMatrix4x4 >::New();
+  ComputeTransformMatrixFromBoundingAxes(inputPoints, boundingAxesToRasTransformMatrix);
+
+  vtkSmartPointer< vtkMatrix4x4 > rasToBoundingAxesTransformMatrix = vtkSmartPointer< vtkMatrix4x4 >::New();
+  vtkMatrix4x4::Invert(boundingAxesToRasTransformMatrix, rasToBoundingAxesTransformMatrix);
+
+  double smallestBoundingExtentRanges[3] = { 0.0, 0.0, 0.0 }; // temporary values
+  ComputeTransformedExtentRanges(inputPoints, rasToBoundingAxesTransformMatrix, smallestBoundingExtentRanges);
+
+  PointArrangement pointArrangement = ComputePointArrangement(smallestBoundingExtentRanges);
+
+  // Deal with cases of degenerate point arrangements
+  if (pointArrangement == POINT_ARRANGEMENT_SINGULAR || pointArrangement == POINT_ARRANGEMENT_LINEAR)
+  {
+    return GenerateDelaunayClosedSurfaceModel(inputPoints, outputPolyData, 0.0, false, true); // TODO: Should this be handled otherwise?
+  }
+
+  // Compute the poly data on the collected surface of the model
+  vtkSmartPointer<vtkPolyData> surfacePolyData = vtkSmartPointer<vtkPolyData>::New();
+  GetSurfacePolyData(inputPoints, surfacePolyData);
+
+  // Find the normal vector to the surface (this is the direction in which we will extrude)
+  double surfaceNormal[3] = { 0.0, 0.0, 0.0 }; // temporary values
+  const int PLANE_NORMAL_INDEX = 2; // The plane normal has the smallest variation, and is stored in the last column
+  GetNthColumnInMatrix(boundingAxesToRasTransformMatrix, PLANE_NORMAL_INDEX, surfaceNormal);
+
+  // Compute the poly data that is on the extruded surface
+  vtkSmartPointer<vtkPolyData> extrudedPolyData = vtkSmartPointer<vtkPolyData>::New();
+  GetExtrudedPolyData(surfacePolyData, extrudedPolyData, surfaceNormal, extrusionDepth);
+
+  // Compute the boundary points on each surface - these will be used to join the surfaces
+  vtkSmartPointer<vtkPoints> surfaceBoundaryPoints = vtkSmartPointer<vtkPoints>::New();
+  vtkSmartPointer<vtkPoints> extrudedBoundaryPoints = vtkSmartPointer<vtkPoints>::New();
+  GetPolyDataBoundaryPoints(surfacePolyData, surfaceBoundaryPoints);
+  GetPolyDataBoundaryPoints(extrudedPolyData, extrudedBoundaryPoints);
+
+  // If the boundary points could not be created, this is because the pointset is degenerate
+  if( surfaceBoundaryPoints->GetNumberOfPoints() == 0 || extrudedBoundaryPoints->GetNumberOfPoints() == 0 )
+  {
+    vtkGenericWarningMacro("Could not create surface boundary. Possibly due to point arrangement on coordinate plane. Aborting closed surface generation.");
+    return false;
+  }
+
+  // Create the poly data for the "sides" of the surface (joining the top surface and extruded surface)
+  vtkSmartPointer<vtkPolyData> sidePolyData = vtkSmartPointer<vtkPolyData>::New();
+  GetSidePolyData(surfaceBoundaryPoints, extrudedBoundaryPoints, sidePolyData);
+
+  // Finally, put it all together into a closed surface model
+  vtkSmartPointer<vtkPolyData> joinedPolyData = vtkSmartPointer<vtkPolyData>::New();
+  JoinExtrusionPolyData(surfacePolyData, extrudedPolyData, sidePolyData, joinedPolyData);
+
+  if(!IsPolyDataClosed(joinedPolyData))
+  {
+    vtkGenericWarningMacro("Could not create closed surface. Aborting closed surface generation.");
+    return false;
+  }
+
+  outputPolyData->DeepCopy(joinedPolyData);
   return true;
 }
 
@@ -388,27 +432,182 @@ void vtkSlicerMarkupsToModelClosedSurfaceGeneration::ComputeTransformedExtentRan
 }
 
 //------------------------------------------------------------------------------
-double vtkSlicerMarkupsToModelClosedSurfaceGeneration::ComputeSurfaceExtrusionAmount(const double extents[3])
+double vtkSlicerMarkupsToModelClosedSurfaceGeneration::ComputeDegenerateSurfaceExtrusionAmount(const double extents[3])
 {
   // MINIMUM_SURFACE_EXTRUSION_AMOUNT is the value returned by default, and the final result cannot be less than this.
   if (extents == NULL)
   {
-    vtkGenericWarningMacro("extents is null. Returning MINIMUM_SURFACE_EXTRUSION_AMOUNT: " << MINIMUM_SURFACE_EXTRUSION_AMOUNT << ".");
-    return MINIMUM_SURFACE_EXTRUSION_AMOUNT;
+    vtkGenericWarningMacro("extents is null. Returning MINIMUM_SURFACE_EXTRUSION_AMOUNT: " << MINIMUM_DEGENERATE_SURFACE_EXTRUSION_AMOUNT << ".");
+    return MINIMUM_DEGENERATE_SURFACE_EXTRUSION_AMOUNT;
   }
 
   double normOfExtents = vtkMath::Norm(extents);
   const double SURFACE_EXTRUSION_NORM_MULTIPLIER = 0.01; // this value is observed to produce generally acceptable results
   double surfaceExtrusionAmount = normOfExtents * SURFACE_EXTRUSION_NORM_MULTIPLIER;
 
-  if (surfaceExtrusionAmount < MINIMUM_SURFACE_EXTRUSION_AMOUNT)
+  if (surfaceExtrusionAmount < MINIMUM_DEGENERATE_SURFACE_EXTRUSION_AMOUNT)
   {
-    vtkGenericWarningMacro("Surface extrusion amount smaller than " << MINIMUM_SURFACE_EXTRUSION_AMOUNT << " : " << surfaceExtrusionAmount << ". "
+    vtkGenericWarningMacro("Surface extrusion amount smaller than " << MINIMUM_DEGENERATE_SURFACE_EXTRUSION_AMOUNT << " : " << surfaceExtrusionAmount << ". "
       << "Consider checking the points for singularity. Setting surface extrusion amount to default "
-      << MINIMUM_SURFACE_EXTRUSION_AMOUNT << ".");
-    surfaceExtrusionAmount = MINIMUM_SURFACE_EXTRUSION_AMOUNT;
+      << MINIMUM_DEGENERATE_SURFACE_EXTRUSION_AMOUNT << ".");
+    surfaceExtrusionAmount = MINIMUM_DEGENERATE_SURFACE_EXTRUSION_AMOUNT;
   }
   return surfaceExtrusionAmount;
+}
+
+//------------------------------------------------------------------------------
+void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetSurfacePolyData(vtkPoints* inputPoints, vtkPolyData* surfacePolyData)
+{
+  vtkNew<vtkPolyData> surfacePointsPolyData;
+  surfacePointsPolyData->SetPoints(inputPoints);
+
+  // Use 2D delaunay triangulation to find the top surface
+  vtkNew<vtkDelaunay2D> delaunayFilter;
+  delaunayFilter->SetProjectionPlaneMode(VTK_BEST_FITTING_PLANE);
+  delaunayFilter->SetInputData(surfacePointsPolyData.GetPointer());
+
+  // Clean the surface
+  vtkNew<vtkCleanPolyData> cleanSurfaceFilter;
+  cleanSurfaceFilter->SetTolerance( COMPARE_TO_ZERO_TOLERANCE );
+  cleanSurfaceFilter->SetInputConnection(delaunayFilter->GetOutputPort());
+
+  cleanSurfaceFilter->Update();  
+  surfacePolyData->DeepCopy(cleanSurfaceFilter->GetOutput());
+}
+
+//------------------------------------------------------------------------------
+void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetExtrudedPolyData(vtkPolyData* surfacePolyData, vtkPolyData* extrudedPolyData, double surfaceNormal[ 3 ], double extrusionDepth)
+{
+  // Get the translation vector for the extruded surface poly data
+  vtkMath::MultiplyScalar( surfaceNormal, extrusionDepth );
+
+  vtkNew<vtkTransform> extrusionTransform;
+  extrusionTransform->Translate(surfaceNormal);
+
+  vtkNew<vtkTransformPolyDataFilter> extrusionTransformFilter;
+  extrusionTransformFilter->SetInputData(surfacePolyData);
+  extrusionTransformFilter->SetTransform(extrusionTransform.GetPointer());
+
+  extrusionTransformFilter->Update();
+  extrudedPolyData->DeepCopy(extrusionTransformFilter->GetOutput());
+}
+
+//------------------------------------------------------------------------------
+void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetPolyDataBoundaryPoints(vtkPolyData* polyData, vtkPoints* boundaryPoints)
+{
+  // Find the boundary edges
+  vtkNew<vtkFeatureEdges> featureEdgesFilter;
+  featureEdgesFilter->FeatureEdgesOff();
+  featureEdgesFilter->NonManifoldEdgesOff();
+  featureEdgesFilter->ManifoldEdgesOff();
+  featureEdgesFilter->BoundaryEdgesOn();
+  featureEdgesFilter->SetInputData(polyData);
+
+  // Cleanup the boundary edges so that we just have the relevant points
+  vtkNew<vtkStripper> stripperFilter;
+  stripperFilter->SetInputConnection(featureEdgesFilter->GetOutputPort());
+  
+  vtkNew<vtkCleanPolyData> cleanPointsFilter;
+  cleanPointsFilter->SetInputConnection(stripperFilter->GetOutputPort());
+
+  cleanPointsFilter->Update();
+  boundaryPoints->DeepCopy(cleanPointsFilter->GetOutput()->GetPoints());
+}
+
+//------------------------------------------------------------------------------
+void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetSidePolyData(vtkPoints* surfaceBoundaryPoints, vtkPoints* extrudedBoundaryPoints, vtkPolyData* sidePolyData)
+{
+  // If there are different numbers of boundary points for the two poly datas, then we cannot join them. Abort.
+  if (surfaceBoundaryPoints->GetNumberOfPoints() != extrudedBoundaryPoints->GetNumberOfPoints())
+  {
+    vtkGenericWarningMacro("Top and deep surfaces have different number of boundary points.");
+    return;
+  }
+  int numberOfBoundaryPoints = surfaceBoundaryPoints->GetNumberOfPoints();
+
+  vtkNew<vtkAppendPolyData> sidePolyDataAppend;
+
+  for ( int i = 0; i < numberOfBoundaryPoints; i++ )
+  {
+    vtkNew<vtkPoints> currentStripPoints;
+
+    double point1[ 3 ] = { 0, 0, 0 }; // From top surface
+    surfaceBoundaryPoints->GetPoint( i % numberOfBoundaryPoints, point1 );
+    currentStripPoints->InsertNextPoint( point1 );
+
+    double point2[ 3 ] = { 0, 0, 0 }; // From extruded surface
+    extrudedBoundaryPoints->GetPoint( i % numberOfBoundaryPoints, point1 );
+    currentStripPoints->InsertNextPoint( point1 );
+    
+    double point3[ 3 ] = { 0, 0, 0 }; // From top surface
+    surfaceBoundaryPoints->GetPoint( ( i + 1 ) % numberOfBoundaryPoints, point1 );
+    currentStripPoints->InsertNextPoint( point1 );
+
+    double point4[ 3 ] = { 0, 0, 0 }; // From extruded surface
+    extrudedBoundaryPoints->GetPoint( ( i + 1 ) % numberOfBoundaryPoints, point1 );
+    currentStripPoints->InsertNextPoint( point1 );
+      
+    // We know what the triangles should look like, so create them manually
+    vtkNew<vtkTriangle> triangle1;
+    triangle1->GetPointIds()->SetId( 0, 0 );
+    triangle1->GetPointIds()->SetId( 1, 1 );
+    triangle1->GetPointIds()->SetId( 2, 2 );
+      
+    vtkNew<vtkTriangle> triangle2;
+    triangle2->GetPointIds()->SetId( 0, 3 );
+    triangle2->GetPointIds()->SetId( 1, 2 );
+    triangle2->GetPointIds()->SetId( 2, 1 );
+      
+    vtkNew<vtkCellArray> triangles;
+    triangles->InsertNextCell(triangle1.GetPointer());
+    triangles->InsertNextCell(triangle2.GetPointer());
+      
+    vtkNew<vtkPolyData> currentStripPolyData;
+    currentStripPolyData->SetPoints(currentStripPoints.GetPointer());
+    currentStripPolyData->SetPolys(triangles.GetPointer());
+         
+    sidePolyDataAppend->AddInputData(currentStripPolyData.GetPointer());
+  }
+    
+  sidePolyDataAppend->Update();
+  sidePolyData->DeepCopy(sidePolyDataAppend->GetOutput());
+}
+
+//------------------------------------------------------------------------------
+void vtkSlicerMarkupsToModelClosedSurfaceGeneration::JoinExtrusionPolyData(vtkPolyData* surfacePolyData, vtkPolyData* extrudedPolyData, vtkPolyData* sidePolyData, vtkPolyData* joinedPolyData)
+{
+  // Append the poly data into one single poly data Put the poly data together
+  vtkNew<vtkAppendPolyData> appendDirtyPolyData;
+  appendDirtyPolyData->AddInputData(surfacePolyData);
+  appendDirtyPolyData->AddInputData(extrudedPolyData);
+  appendDirtyPolyData->AddInputData(sidePolyData);
+    
+  // Clean up so the new poly data so that it is closed and the normal face inward
+  vtkNew<vtkCleanPolyData> preNormalCleanFilter;
+  preNormalCleanFilter->SetInputConnection(appendDirtyPolyData->GetOutputPort());
+
+  vtkNew<vtkPolyDataNormals> normalsFilter;
+  normalsFilter->AutoOrientNormalsOn();
+  normalsFilter->SetInputConnection(preNormalCleanFilter->GetOutputPort());
+
+  vtkNew<vtkCleanPolyData> postNormalCleanFilter;
+  postNormalCleanFilter->SetInputConnection(normalsFilter->GetOutputPort());
+
+  postNormalCleanFilter->Update();
+  joinedPolyData->DeepCopy(postNormalCleanFilter->GetOutput());
+}
+
+//------------------------------------------------------------------------------
+bool vtkSlicerMarkupsToModelClosedSurfaceGeneration::IsPolyDataClosed(vtkPolyData* polyData)
+{
+ vtkNew<vtkFeatureEdges> edgesFilter;
+  edgesFilter->FeatureEdgesOff();
+  edgesFilter->BoundaryEdgesOn();
+  edgesFilter->NonManifoldEdgesOn();
+  edgesFilter->SetInputData(polyData);
+  edgesFilter->Update();
+    
+  return (edgesFilter->GetOutput()->GetNumberOfCells() == 0);
 }
 
 //------------------------------------------------------------------------------
@@ -461,6 +660,84 @@ void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetNthColumnInMatrix(vtkMat
   outputAxis[0] = matrix->GetElement(0, n);
   outputAxis[1] = matrix->GetElement(1, n);
   outputAxis[2] = matrix->GetElement(2, n);
+}
+
+//------------------------------------------------------------------------------
+void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetPolyDataFromPoints( vtkPoints* inputPoints, vtkPolyData* outputPolyData )
+{
+  int numberOfPoints = inputPoints->GetNumberOfPoints();
+
+  vtkSmartPointer< vtkCellArray > inputCellArray = vtkSmartPointer< vtkCellArray >::New();
+  inputCellArray->InsertNextCell(numberOfPoints);
+  for (int i = 0; i < numberOfPoints; i++)
+  {
+    inputCellArray->InsertCellPoint(i);
+  }
+
+  outputPolyData->SetLines(inputCellArray);
+  outputPolyData->SetPoints(inputPoints);
+}
+
+//------------------------------------------------------------------------------
+void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetPointArrangementSingularGlyph( vtkPolyData* inputPolyData, vtkGlyph3D* outputGlyph, int numberOfPoints )
+{
+  vtkSmartPointer<vtkCubeSource> cubeSource = vtkSmartPointer<vtkCubeSource>::New();
+  // there is only one point, we cannot compute extent or extrusion from this.
+  double extrusionMagnitude = MINIMUM_DEGENERATE_SURFACE_EXTRUSION_AMOUNT;
+  if ( numberOfPoints > 1 )
+  {
+    vtkGenericWarningMacro( "There is more than one input point, but they form a singularity. " <<
+                            "Giving depth of " << MINIMUM_DEGENERATE_SURFACE_EXTRUSION_AMOUNT << "." );
+  }
+  cubeSource->SetBounds(-extrusionMagnitude, extrusionMagnitude,
+    -extrusionMagnitude, extrusionMagnitude,
+    -extrusionMagnitude, extrusionMagnitude);
+
+  outputGlyph->SetSourceConnection(cubeSource->GetOutputPort());
+  outputGlyph->SetInputData(inputPolyData);
+  outputGlyph->Update();
+}
+
+//------------------------------------------------------------------------------
+void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetPointArrangementLinearGlyph( vtkPolyData* inputPolyData, vtkGlyph3D* outputGlyph, double smallestBoundingExtentRanges[3], vtkMatrix4x4* boundingAxesToRasTransformMatrix )
+{
+  // draw a "square" around the line (make it a rectangular prism)
+  vtkSmartPointer<vtkRegularPolygonSource> squareSource = vtkSmartPointer<vtkRegularPolygonSource>::New();
+  squareSource->SetCenter(0.0, 0.0, 0.0);
+  double extrusionMagnitude = ComputeDegenerateSurfaceExtrusionAmount(smallestBoundingExtentRanges); // need to give some depth
+  squareSource->SetRadius(extrusionMagnitude);
+  squareSource->SetNumberOfSides(4);
+  double lineAxis[3] = { 0.0, 0.0, 0.0 }; // temporary values
+  const int LINE_AXIS_INDEX = 0; // The largest (and only meaningful) axis is in the 0th column
+  // the bounding axes are stored in the columns of transformFromBoundingAxes
+  GetNthColumnInMatrix(boundingAxesToRasTransformMatrix, LINE_AXIS_INDEX, lineAxis);
+  squareSource->SetNormal(lineAxis);
+
+  outputGlyph->SetSourceConnection(squareSource->GetOutputPort());
+  outputGlyph->SetInputData(inputPolyData);
+  outputGlyph->Update();
+}
+
+//------------------------------------------------------------------------------
+void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetPointArrangementPlanarGlyph( vtkPolyData* inputPolyData, vtkGlyph3D* outputGlyph, double smallestBoundingExtentRanges[3], vtkMatrix4x4* boundingAxesToRasTransformMatrix )
+{
+  // extrude additional points on either side of the plane
+  vtkSmartPointer<vtkLineSource> lineSource = vtkSmartPointer<vtkLineSource>::New();
+  double planeNormal[3] = { 0.0, 0.0, 0.0 }; // temporary values
+  const int PLANE_NORMAL_INDEX = 2; // The plane normal has the smallest variation, and is stored in the last column
+  // the bounding axes are stored in the columns of transformFromBoundingAxes
+  GetNthColumnInMatrix(boundingAxesToRasTransformMatrix, PLANE_NORMAL_INDEX, planeNormal);
+  double extrusionMagnitude = ComputeDegenerateSurfaceExtrusionAmount(smallestBoundingExtentRanges); // need to give some depth
+  double point1[3] = { planeNormal[0], planeNormal[1], planeNormal[2] };
+  vtkMath::MultiplyScalar(point1, extrusionMagnitude);
+  lineSource->SetPoint1(point1);
+  double point2[3] = { planeNormal[0], planeNormal[1], planeNormal[2] };
+  vtkMath::MultiplyScalar(point2, -extrusionMagnitude);
+  lineSource->SetPoint2(point2);
+
+  outputGlyph->SetSourceConnection(lineSource->GetOutputPort());
+  outputGlyph->SetInputData(inputPolyData);
+  outputGlyph->Update();
 }
 
 //------------------------------------------------------------------------------

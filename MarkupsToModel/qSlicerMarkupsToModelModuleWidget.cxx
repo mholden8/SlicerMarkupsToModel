@@ -113,6 +113,7 @@ void qSlicerMarkupsToModelModuleWidget::setup()
   connect(d->ModeClosedSurfaceRadioButton, SIGNAL(clicked()), this, SLOT(updateMRMLFromGUI()));
   connect(d->ModeCurveRadioButton, SIGNAL(clicked()), this, SLOT(updateMRMLFromGUI()));
   connect(d->DelaunayAlphaDoubleSpinBox, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
+  connect(d->ExtrusionDepthDoubleSpinBox, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
   connect(d->TubeRadiusDoubleSpinBox, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
   connect(d->TubeSegmentsSpinBox, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
   connect(d->TubeSidesSpinBox, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
@@ -131,6 +132,9 @@ void qSlicerMarkupsToModelModuleWidget::setup()
   connect(d->ModelVisiblityButton, SIGNAL(toggled(bool)), this, SLOT(updateMRMLFromGUI()));
   connect(d->ModelSliceIntersectionCheckbox, SIGNAL(toggled(bool)), this, SLOT(updateMRMLFromGUI()));
   connect(d->MarkupsTextScaleSlider, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
+
+  connect(d->DelaunayRadioButton, SIGNAL(clicked()), this, SLOT(updateMRMLFromGUI()));
+  connect(d->ExtrusionRadioButton, SIGNAL(clicked()), this, SLOT(updateMRMLFromGUI()));
 
   connect(d->LinearInterpolationRadioButton, SIGNAL(clicked()), this, SLOT(updateMRMLFromGUI()));
   connect(d->CardinalInterpolationRadioButton, SIGNAL(clicked()), this, SLOT(updateMRMLFromGUI()));
@@ -341,8 +345,17 @@ void qSlicerMarkupsToModelModuleWidget::updateMRMLFromGUI()
 
   markupsToModelModuleNode->SetCleanMarkups(d->CleanMarkupsCheckBox->isChecked());
   markupsToModelModuleNode->SetDelaunayAlpha(d->DelaunayAlphaDoubleSpinBox->value());
+  markupsToModelModuleNode->SetExtrusionDepth(d->ExtrusionDepthDoubleSpinBox->value());
   markupsToModelModuleNode->SetConvexHull(d->ConvexHullCheckBox->isChecked());
   markupsToModelModuleNode->SetButterflySubdivision(d->ButterflySubdivisionCheckBox->isChecked());
+  if(d->DelaunayRadioButton->isChecked())
+  {
+    markupsToModelModuleNode->SetSurfaceType(vtkMRMLMarkupsToModelNode::Delaunay);
+  }
+  else if(d->ExtrusionRadioButton->isChecked())
+  {
+    markupsToModelModuleNode->SetSurfaceType(vtkMRMLMarkupsToModelNode::Extrusion);
+  }  
 
   markupsToModelModuleNode->SetTubeRadius(d->TubeRadiusDoubleSpinBox->value());
   markupsToModelModuleNode->SetTubeSegmentsBetweenControlPoints(d->TubeSegmentsSpinBox->value());
@@ -467,7 +480,13 @@ void qSlicerMarkupsToModelModuleWidget::updateGUIFromMRML()
   // closed surface
   d->ButterflySubdivisionCheckBox->setChecked(markupsToModelNode->GetButterflySubdivision());
   d->DelaunayAlphaDoubleSpinBox->setValue(markupsToModelNode->GetDelaunayAlpha());
+  d->ExtrusionDepthDoubleSpinBox->setValue(markupsToModelNode->GetExtrusionDepth());
   d->ConvexHullCheckBox->setChecked(markupsToModelNode->GetConvexHull());
+  switch(markupsToModelNode->GetSurfaceType())
+  {
+  case vtkMRMLMarkupsToModelNode::Delaunay: d->DelaunayRadioButton->setChecked(1); break;
+  case vtkMRMLMarkupsToModelNode::Extrusion: d->ExtrusionRadioButton->setChecked(1); break;
+  }
   // curve
   d->TubeRadiusDoubleSpinBox->setValue(markupsToModelNode->GetTubeRadius());
   d->TubeSidesSpinBox->setValue(markupsToModelNode->GetTubeNumberOfSides());
@@ -541,6 +560,8 @@ void qSlicerMarkupsToModelModuleWidget::updateGUIFromMRML()
 
   // Determine visibility of widgets
   bool isSurface = d->ModeClosedSurfaceRadioButton->isChecked();
+  bool isDelaunay = d->DelaunayRadioButton->isChecked();
+  bool isExtrusion = d->ExtrusionRadioButton->isChecked();
   bool isCurve = d->ModeCurveRadioButton->isChecked();
   bool isPolynomial = d->PolynomialInterpolationRadioButton->isChecked();
   bool isKochanek = d->KochanekInterpolationRadioButton->isChecked();
@@ -549,12 +570,17 @@ void qSlicerMarkupsToModelModuleWidget::updateGUIFromMRML()
   d->InputMarkupsPlaceWidget->setVisible( isInputMarkups );
   d->MarkupsTextScaleSlider->setVisible( isInputMarkups );
 
-  d->ButterflySubdivisionLabel->setVisible( isSurface );
-  d->ButterflySubdivisionCheckBox->setVisible( isSurface );
-  d->DelaunayAlphaLabel->setVisible( isSurface );
-  d->DelaunayAlphaDoubleSpinBox->setVisible( isSurface );
-  d->ConvexHullLabel->setVisible( isSurface );
-  d->ConvexHullCheckBox->setVisible( isSurface );
+  d->SurfaceTypeLabel->setVisible( isSurface );
+  d->SurfaceTypeGroupBox->setVisible( isSurface );
+  d->ButterflySubdivisionLabel->setVisible( isSurface && isDelaunay );
+  d->ButterflySubdivisionCheckBox->setVisible( isSurface && isDelaunay );
+  d->DelaunayAlphaLabel->setVisible( isSurface && isDelaunay );
+  d->DelaunayAlphaDoubleSpinBox->setVisible( isSurface && isDelaunay );
+  d->ConvexHullLabel->setVisible( isSurface && isDelaunay );
+  d->ConvexHullCheckBox->setVisible( isSurface && isDelaunay );
+
+  d->ExtrusionDepthLabel->setVisible( isSurface && isExtrusion );
+  d->ExtrusionDepthDoubleSpinBox->setVisible( isSurface && isExtrusion );
 
   d->InterpolationGroupBox->setVisible( isCurve );
   d->InterpolationLabel->setVisible( isCurve );
@@ -605,6 +631,7 @@ void qSlicerMarkupsToModelModuleWidget::blockAllSignals(bool block)
   // closed surface options
   d->ButterflySubdivisionCheckBox->blockSignals(block);
   d->DelaunayAlphaDoubleSpinBox->blockSignals(block);
+  d->ExtrusionDepthDoubleSpinBox->blockSignals(block);
   d->ConvexHullCheckBox->blockSignals(block);
   // curve options
   d->TubeSidesSpinBox->blockSignals(block);

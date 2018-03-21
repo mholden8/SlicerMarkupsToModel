@@ -55,12 +55,14 @@ vtkMRMLMarkupsToModelNode::vtkMRMLMarkupsToModelNode()
   // know why no model is drawn around the points. It is better to use a safe and simple setting
   // by default (alpha = 0 => use convex hull).
   this->DelaunayAlpha = 0.0;
+  this->ExtrusionDepth = 50.0;
   this->TubeRadius = 1.0;
   this->TubeSegmentsBetweenControlPoints = 5;
   this->TubeNumberOfSides = 8;
   this->TubeLoop = false;
   this->ModelType = 0;
   this->InterpolationType = 0;
+  this->SurfaceType = 0;
   this->PointParameterType = 0;
 
   this->KochanekTension = 0;
@@ -102,7 +104,9 @@ void vtkMRMLMarkupsToModelNode::WriteXML( ostream& of, int nIndent )
   of << indent << " ConvexHull =\"" << (this->ConvexHull ? "true" : "false") << "\"";
   of << indent << " ButterflySubdivision =\"" << (this->ButterflySubdivision ? "true" : "false") << "\"";
   of << indent << " DelaunayAlpha =\"" << this->DelaunayAlpha << "\"";
+  of << indent << " ExtrusionDepth =\"" << this->ExtrusionDepth << "\"";
   of << indent << " InterpolationType=\"" << this->GetInterpolationTypeAsString(this->InterpolationType) << "\"";
+  of << indent << " SurfaceType=\"" << this->GetSurfaceTypeAsString(this->SurfaceType) << "\"";
   of << indent << " PointParameterType=\"" << this->GetPointParameterTypeAsString(this->PointParameterType) << "\"";
   of << indent << " TubeRadius=\"" << this->TubeRadius << "\"";
   of << indent << " TubeNumberOfSides=\"" << this->TubeNumberOfSides << "\"";
@@ -167,6 +171,14 @@ void vtkMRMLMarkupsToModelNode::ReadXMLAttributes( const char** atts )
       nameString >> delaunayAlpha;
       SetDelaunayAlpha(delaunayAlpha);
     }
+    else if ( ! strcmp( attName, "ExtrusionDepth" ) )
+    {
+      double extrusionDepth = 0.0;
+      std::stringstream nameString;
+      nameString << attValue;
+      nameString >> extrusionDepth;
+      SetExtrusionDepth(extrusionDepth);
+    }
     else if ( ! strcmp( attName, "InterpolationType" ) )
     {
       int typeAsInt = GetInterpolationTypeFromString( attValue );
@@ -178,6 +190,19 @@ void vtkMRMLMarkupsToModelNode::ReadXMLAttributes( const char** atts )
       {
         vtkWarningMacro("Unrecognized interpolation type read from MRML node: " << attValue << ". Setting to Linear.");
         this->InterpolationType = this->Linear;
+      }
+    }
+    else if ( ! strcmp( attName, "SurfaceType" ) )
+    {
+      int typeAsInt = GetSurfaceTypeFromString( attValue );
+      if ( typeAsInt >= 0 && typeAsInt < SurfaceType_Last)
+      {
+        this->SurfaceType = typeAsInt;
+      }
+      else
+      {
+        vtkWarningMacro("Unrecognized surface type read from MRML node: " << attValue << ". Setting to Delaunay.");
+        this->SurfaceType = this->Delaunay;
       }
     }
     else if ( ! strcmp( attName, "PointParameterType" ) )
@@ -396,6 +421,19 @@ const char* vtkMRMLMarkupsToModelNode::GetInterpolationTypeAsString( int id )
 }
 
 //------------------------------------------------------------------------------
+const char* vtkMRMLMarkupsToModelNode::GetSurfaceTypeAsString( int id )
+{
+  switch ( id )
+  {
+  case Delaunay: return "delaunay";
+  case Extrusion: return "extrusion";
+  default:
+    // invalid id
+    return "";
+  }
+}
+
+//------------------------------------------------------------------------------
 const char* vtkMRMLMarkupsToModelNode::GetPointParameterTypeAsString( int id )
 {
   switch ( id )
@@ -439,6 +477,26 @@ int vtkMRMLMarkupsToModelNode::GetInterpolationTypeFromString( const char* name 
   for ( int i = 0; i < InterpolationType_Last; i++ )
   {
     if ( strcmp( name, GetInterpolationTypeAsString( i ) ) == 0 )
+    {
+      // found a matching name
+      return i;
+    }
+  }
+  // unknown name
+  return -1;
+}
+
+//------------------------------------------------------------------------------
+int vtkMRMLMarkupsToModelNode::GetSurfaceTypeFromString( const char* name )
+{
+  if ( name == NULL )
+  {
+    // invalid name
+    return -1;
+  }
+  for ( int i = 0; i < SurfaceType_Last; i++ )
+  {
+    if ( strcmp( name, GetSurfaceTypeAsString( i ) ) == 0 )
     {
       // found a matching name
       return i;

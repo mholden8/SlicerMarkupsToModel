@@ -4,6 +4,7 @@
 #include "vtkMRMLMarkupsToModelNode.h"
 
 // vtk includes
+#include <vtkGlyph3D.h>
 #include <vtkMatrix4x4.h>
 #include <vtkPoints.h>
 #include <vtkPolyData.h>
@@ -28,7 +29,10 @@ class VTK_SLICER_MARKUPSTOMODEL_MODULE_LOGIC_EXPORT vtkSlicerMarkupsToModelClose
     };
 
     // Generates the closed surface from the points using vtkDelaunay3D.
-    static bool GenerateClosedSurfaceModel( vtkPoints* points, vtkPolyData* outputPolyData, double delaunayAlpha, bool smoothing, bool forceConvex );
+    static bool GenerateDelaunayClosedSurfaceModel( vtkPoints* points, vtkPolyData* outputPolyData, double delaunayAlpha, bool smoothing, bool forceConvex );
+
+    // Generates the closed surface from the points using vtkDelaunay2D with extrusion
+    static bool GenerateExtrusionClosedSurfaceModel( vtkPoints* points, vtkPolyData* outputPolyData, double extrusionDepth );
 
   protected:
     vtkSlicerMarkupsToModelClosedSurfaceGeneration();
@@ -42,12 +46,39 @@ class VTK_SLICER_MARKUPSTOMODEL_MODULE_LOGIC_EXPORT vtkSlicerMarkupsToModelClose
     static void ComputeTransformedExtentRanges( vtkPoints* points, vtkMatrix4x4* transformMatrix, double outputExtentRanges[ 3 ] );
 
     // Compute the amount to extrude surfaces when closed surface is linear or planar.
-    static double ComputeSurfaceExtrusionAmount( const double extents[ 3 ] );
+    static double ComputeDegenerateSurfaceExtrusionAmount( const double extents[ 3 ] );
+
+    // Compute the 2D surface poly data from a set of points
+    static void GetSurfacePolyData( vtkPoints* inputPoints, vtkPolyData* surfacePolyData );
+
+    // Compute the 2D extruded poly data from a surface and a translation vector
+    static void GetExtrudedPolyData( vtkPolyData* surfacePolyData, vtkPolyData* extrudedPolyData, double surfaceNormal[ 3 ], double extrusionDepth );
+
+    // Find the boundary points from a 2D poly data surface
+    static void GetPolyDataBoundaryPoints( vtkPolyData* polyData, vtkPoints* boundaryPoints );
+
+    // Compute the 2D surface poly data from a set of points
+    static void GetSidePolyData( vtkPoints* surfaceBoundaryPoints, vtkPoints* extrudedBoundaryPoints, vtkPolyData* sidePolyData );
+
+    // Join together and clean up 3 poly datas: the 2D top surface poly data, the 2d extruded surface poly data, and the side poly data
+    static void JoinExtrusionPolyData( vtkPolyData* surfacePolyData, vtkPolyData* extrudedPolyData, vtkPolyData* sidePolyData, vtkPolyData* joinedPolyData );
+
+    // Compute the 2D surface poly data from a set of points
+    static bool IsPolyDataClosed( vtkPolyData* polyData );
 
     // Find out what kind of arrangment the points are in (see PointArrangementEnum above).
     // If the arrangement is planar, stores the normal of the best fit plane in planeNormal.
     // If the arrangement is linear, stores the axis of the best fit line in lineAxis.
     static PointArrangement ComputePointArrangement( const double smallestBoundingExtentRanges[ 3 ] );
+
+    // Convert the point set into a poly data
+    static void GetPolyDataFromPoints( vtkPoints* inputPoints, vtkPolyData* outputPolyData );
+
+    // Generate basic glyphs for degenerate point sets
+    static void GetPointArrangementSingularGlyph( vtkPolyData* inputPolyData, vtkGlyph3D* outputGlyph, int numberOfPoints );
+    static void GetPointArrangementLinearGlyph( vtkPolyData* inputPolyData, vtkGlyph3D* outputGlyph, double smallestBoundingExtentRanges[3], vtkMatrix4x4* boundingAxesToRasTransformMatrix );
+    static void GetPointArrangementPlanarGlyph( vtkPolyData* inputPolyData, vtkGlyph3D* outputGlyph, double smallestBoundingExtentRanges[3], vtkMatrix4x4* boundingAxesToRasTransformMatrix );
+    
 
     // helper utility functions
     static void SetNthColumnInMatrix( vtkMatrix4x4* matrix, int n, const double axis[ 3 ] );

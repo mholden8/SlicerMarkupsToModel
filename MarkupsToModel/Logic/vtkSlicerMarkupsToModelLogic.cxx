@@ -263,10 +263,12 @@ void vtkSlicerMarkupsToModelLogic::UpdateOutputModel(vtkMRMLMarkupsToModelNode* 
   {
     case vtkMRMLMarkupsToModelNode::ClosedSurface:
     {
+      int surfaceType = markupsToModelModuleNode->GetSurfaceType();
       double delaunayAlpha = markupsToModelModuleNode->GetDelaunayAlpha();
       bool smoothing = markupsToModelModuleNode->GetButterflySubdivision();
       bool forceConvex = markupsToModelModuleNode->GetConvexHull();
-      vtkSlicerMarkupsToModelLogic::UpdateClosedSurfaceModel( controlPoints, outputPolyData, smoothing, forceConvex, delaunayAlpha, cleanMarkups );
+      double extrusionDepth = markupsToModelModuleNode->GetExtrusionDepth();
+      vtkSlicerMarkupsToModelLogic::UpdateClosedSurfaceModel( controlPoints, outputPolyData, surfaceType, smoothing, forceConvex, delaunayAlpha, cleanMarkups, extrusionDepth );
       break;
     }
     case vtkMRMLMarkupsToModelNode::Curve:
@@ -471,7 +473,8 @@ bool vtkSlicerMarkupsToModelLogic::UpdateOutputCurveModel( vtkPoints* controlPoi
 //------------------------------------------------------------------------------
 bool vtkSlicerMarkupsToModelLogic::UpdateClosedSurfaceModel(
   vtkMRMLMarkupsFiducialNode* markupsNode, vtkMRMLModelNode* outputModelNode,
-  bool smoothing, bool forceConvex, double delaunayAlpha, bool cleanMarkups )
+  int surfaceType, bool smoothing, bool forceConvex, double delaunayAlpha, 
+  bool cleanMarkups, double extrusionDepth )
 {
   if ( markupsNode == NULL )
   {
@@ -488,7 +491,7 @@ bool vtkSlicerMarkupsToModelLogic::UpdateClosedSurfaceModel(
   vtkSmartPointer< vtkPoints > controlPoints = vtkSmartPointer< vtkPoints >::New();
   vtkSlicerMarkupsToModelLogic::MarkupsToPoints( markupsNode, controlPoints );
   vtkSmartPointer< vtkPolyData > outputPolyData = vtkSmartPointer< vtkPolyData >::New();
-  bool success = vtkSlicerMarkupsToModelLogic::UpdateClosedSurfaceModel( controlPoints, outputPolyData, smoothing, forceConvex, delaunayAlpha, cleanMarkups );
+  bool success = vtkSlicerMarkupsToModelLogic::UpdateClosedSurfaceModel( controlPoints, outputPolyData, surfaceType, smoothing, forceConvex, delaunayAlpha, cleanMarkups, extrusionDepth );
   if ( !success )
   {
     return false;
@@ -501,7 +504,8 @@ bool vtkSlicerMarkupsToModelLogic::UpdateClosedSurfaceModel(
 //------------------------------------------------------------------------------
 bool vtkSlicerMarkupsToModelLogic::UpdateClosedSurfaceModel(
   vtkPoints* controlPoints, vtkPolyData* outputPolyData,
-  bool smoothing, bool forceConvex, double delaunayAlpha, bool cleanMarkups )
+  int surfaceType, bool smoothing, bool forceConvex, double delaunayAlpha, 
+  bool cleanMarkups, double extrusionDepth )
 {
   if ( controlPoints == NULL )
   {
@@ -521,7 +525,24 @@ bool vtkSlicerMarkupsToModelLogic::UpdateClosedSurfaceModel(
     vtkSlicerMarkupsToModelLogic::RemoveDuplicatePoints( controlPoints );
   }
 
-  vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateClosedSurfaceModel( controlPoints, outputPolyData, delaunayAlpha, smoothing, forceConvex );
+  switch ( surfaceType )
+  {
+    case vtkMRMLMarkupsToModelNode::Delaunay:
+    {
+      vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateDelaunayClosedSurfaceModel( controlPoints, outputPolyData, delaunayAlpha, smoothing, forceConvex );
+      break;
+    }
+    case vtkMRMLMarkupsToModelNode::Extrusion:
+    {
+      vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateExtrusionClosedSurfaceModel( controlPoints, outputPolyData, extrusionDepth );
+      break;
+    }
+    default:
+    {
+      vtkGenericWarningMacro( "Unknown surface type. Aborting." );
+      return false;
+    }
+  }
   return true;
 }
 

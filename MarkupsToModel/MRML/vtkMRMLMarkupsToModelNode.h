@@ -87,6 +87,13 @@ public:
     InterpolationType_Last // insert valid types above this line
   };
 
+  enum SurfaceType
+  {
+    Delaunay = 0,
+    Extrusion, 
+    SurfaceType_Last
+  };
+
   enum PointParameterType
   {
     RawIndices = 0,
@@ -120,6 +127,8 @@ public:
   vtkSetMacro( ModelType, int );
   vtkGetMacro( InterpolationType, int );
   vtkSetMacro( InterpolationType, int );
+  vtkGetMacro( SurfaceType, int );
+  vtkSetMacro( SurfaceType, int );
   vtkGetMacro( PointParameterType, int );
   vtkSetMacro( PointParameterType, int );
   vtkGetMacro( TubeRadius, double );
@@ -139,10 +148,12 @@ public:
   vtkSetMacro( CleanMarkups, bool );
   vtkGetMacro( ButterflySubdivision, bool );
   vtkSetMacro( ButterflySubdivision, bool );
-  vtkGetMacro( DelaunayAlpha, double );
-  vtkSetMacro( DelaunayAlpha, double );
   vtkGetMacro( ConvexHull, bool );
   vtkSetMacro( ConvexHull, bool );
+  vtkGetMacro( DelaunayAlpha, double );
+  vtkSetMacro( DelaunayAlpha, double );
+  vtkGetMacro( ExtrusionDepth, double );
+  vtkSetMacro( ExtrusionDepth, double );
 
 protected:
 
@@ -164,9 +175,11 @@ public:
   // Convert between model and interpolation types IDs and names.
   static const char* GetModelTypeAsString( int id );
   static const char* GetInterpolationTypeAsString( int id );
+  static const char* GetSurfaceTypeAsString( int id );
   static const char* GetPointParameterTypeAsString( int id );
   static int GetModelTypeFromString( const char* name );
   static int GetInterpolationTypeFromString( const char* name );
+  static int GetSurfaceTypeFromString( const char* name );
   static int GetPointParameterTypeFromString( const char* name );
 
   // DEPRECATED - Get the input node
@@ -184,12 +197,14 @@ public:
 private:
   int    ModelType;
   int    InterpolationType; // Rename to CurveType? Can now be approximating.
+  int    SurfaceType;
   int    PointParameterType;
   bool   AutoUpdateOutput;
   bool   CleanMarkups;
-  bool   ButterflySubdivision;
-  double DelaunayAlpha;
+  bool   ButterflySubdivision;  
   bool   ConvexHull;
+  double DelaunayAlpha;
+  double ExtrusionDepth;
   double TubeRadius;
   int    TubeSegmentsBetweenControlPoints;
   int    TubeNumberOfSides;
