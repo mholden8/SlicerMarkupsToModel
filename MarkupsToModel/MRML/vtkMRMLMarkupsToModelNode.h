@@ -154,6 +154,8 @@ public:
   vtkSetMacro( DelaunayAlpha, double );
   vtkGetMacro( ExtrusionDepth, double );
   vtkSetMacro( ExtrusionDepth, double );
+  vtkGetMacro( ForcePlanar, bool );
+  vtkSetMacro( ForcePlanar, bool );
 
 protected:
 
@@ -205,6 +207,7 @@ private:
   bool   ConvexHull;
   double DelaunayAlpha;
   double ExtrusionDepth;
+  bool   ForcePlanar;
   double TubeRadius;
   int    TubeSegmentsBetweenControlPoints;
   int    TubeNumberOfSides;

@@ -114,6 +114,7 @@ void qSlicerMarkupsToModelModuleWidget::setup()
   connect(d->ModeCurveRadioButton, SIGNAL(clicked()), this, SLOT(updateMRMLFromGUI()));
   connect(d->DelaunayAlphaDoubleSpinBox, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
   connect(d->ExtrusionDepthDoubleSpinBox, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
+  connect(d->ForcePlanarCheckBox, SIGNAL(toggled(bool)), this, SLOT(updateMRMLFromGUI()));
   connect(d->TubeRadiusDoubleSpinBox, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
   connect(d->TubeSegmentsSpinBox, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
   connect(d->TubeSidesSpinBox, SIGNAL(valueChanged(double)), this, SLOT(updateMRMLFromGUI()));
@@ -346,6 +347,7 @@ void qSlicerMarkupsToModelModuleWidget::updateMRMLFromGUI()
   markupsToModelModuleNode->SetCleanMarkups(d->CleanMarkupsCheckBox->isChecked());
   markupsToModelModuleNode->SetDelaunayAlpha(d->DelaunayAlphaDoubleSpinBox->value());
   markupsToModelModuleNode->SetExtrusionDepth(d->ExtrusionDepthDoubleSpinBox->value());
+  markupsToModelModuleNode->SetForcePlanar(d->ForcePlanarCheckBox->isChecked());
   markupsToModelModuleNode->SetConvexHull(d->ConvexHullCheckBox->isChecked());
   markupsToModelModuleNode->SetButterflySubdivision(d->ButterflySubdivisionCheckBox->isChecked());
   if(d->DelaunayRadioButton->isChecked())
@@ -481,6 +483,7 @@ void qSlicerMarkupsToModelModuleWidget::updateGUIFromMRML()
   d->ButterflySubdivisionCheckBox->setChecked(markupsToModelNode->GetButterflySubdivision());
   d->DelaunayAlphaDoubleSpinBox->setValue(markupsToModelNode->GetDelaunayAlpha());
   d->ExtrusionDepthDoubleSpinBox->setValue(markupsToModelNode->GetExtrusionDepth());
+  d->ForcePlanarCheckBox->setChecked(markupsToModelNode->GetForcePlanar());
   d->ConvexHullCheckBox->setChecked(markupsToModelNode->GetConvexHull());
   switch(markupsToModelNode->GetSurfaceType())
   {
@@ -581,6 +584,8 @@ void qSlicerMarkupsToModelModuleWidget::updateGUIFromMRML()
 
   d->ExtrusionDepthLabel->setVisible( isSurface && isExtrusion );
   d->ExtrusionDepthDoubleSpinBox->setVisible( isSurface && isExtrusion );
+  d->ForcePlanarLabel->setVisible( isSurface && isExtrusion );
+  d->ForcePlanarCheckBox->setVisible( isSurface && isExtrusion );
 
   d->InterpolationGroupBox->setVisible( isCurve );
   d->InterpolationLabel->setVisible( isCurve );
@@ -632,6 +637,7 @@ void qSlicerMarkupsToModelModuleWidget::blockAllSignals(bool block)
   d->ButterflySubdivisionCheckBox->blockSignals(block);
   d->DelaunayAlphaDoubleSpinBox->blockSignals(block);
   d->ExtrusionDepthDoubleSpinBox->blockSignals(block);
+  d->ForcePlanarCheckBox->blockSignals(block);
   d->ConvexHullCheckBox->blockSignals(block);
   // curve options
   d->TubeSidesSpinBox->blockSignals(block);

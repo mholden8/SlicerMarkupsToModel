@@ -56,6 +56,7 @@ vtkMRMLMarkupsToModelNode::vtkMRMLMarkupsToModelNode()
   // by default (alpha = 0 => use convex hull).
   this->DelaunayAlpha = 0.0;
   this->ExtrusionDepth = 50.0;
+  this->ForcePlanar = false;
   this->TubeRadius = 1.0;
   this->TubeSegmentsBetweenControlPoints = 5;
   this->TubeNumberOfSides = 8;
@@ -105,6 +106,7 @@ void vtkMRMLMarkupsToModelNode::WriteXML( ostream& of, int nIndent )
   of << indent << " ButterflySubdivision =\"" << (this->ButterflySubdivision ? "true" : "false") << "\"";
   of << indent << " DelaunayAlpha =\"" << this->DelaunayAlpha << "\"";
   of << indent << " ExtrusionDepth =\"" << this->ExtrusionDepth << "\"";
+  of << indent << " ForcePlanar =\"" << (this->ForcePlanar ? "true" : "false") << "\"";
   of << indent << " InterpolationType=\"" << this->GetInterpolationTypeAsString(this->InterpolationType) << "\"";
   of << indent << " SurfaceType=\"" << this->GetSurfaceTypeAsString(this->SurfaceType) << "\"";
   of << indent << " PointParameterType=\"" << this->GetPointParameterTypeAsString(this->PointParameterType) << "\"";
@@ -178,6 +180,10 @@ void vtkMRMLMarkupsToModelNode::ReadXMLAttributes( const char** atts )
       nameString << attValue;
       nameString >> extrusionDepth;
       SetExtrusionDepth(extrusionDepth);
+    }
+    else if ( ! strcmp( attName, "ForcePlanar" ) )
+    {
+      SetForcePlanar(!strcmp(attValue,"true"));
     }
     else if ( ! strcmp( attName, "InterpolationType" ) )
     {

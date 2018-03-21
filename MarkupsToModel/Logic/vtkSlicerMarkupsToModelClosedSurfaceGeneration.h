@@ -32,7 +32,7 @@ class VTK_SLICER_MARKUPSTOMODEL_MODULE_LOGIC_EXPORT vtkSlicerMarkupsToModelClose
     static bool GenerateDelaunayClosedSurfaceModel( vtkPoints* points, vtkPolyData* outputPolyData, double delaunayAlpha, bool smoothing, bool forceConvex );
 
     // Generates the closed surface from the points using vtkDelaunay2D with extrusion
-    static bool GenerateExtrusionClosedSurfaceModel( vtkPoints* points, vtkPolyData* outputPolyData, double extrusionDepth );
+    static bool GenerateExtrusionClosedSurfaceModel( vtkPoints* points, vtkPolyData* outputPolyData, double extrusionDepth, bool forcePlanar );
 
   protected:
     vtkSlicerMarkupsToModelClosedSurfaceGeneration();
@@ -50,6 +50,9 @@ class VTK_SLICER_MARKUPSTOMODEL_MODULE_LOGIC_EXPORT vtkSlicerMarkupsToModelClose
 
     // Compute the 2D surface poly data from a set of points
     static void GetSurfacePolyData( vtkPoints* inputPoints, vtkPolyData* surfacePolyData );
+
+    // Compute the 2D surface poly data from a set of points, projected onto the plane of best fit
+    static void GetPlanarSurfacePolyData( vtkPoints* inputPoints, vtkPolyData* surfacePolyData, double surfaceNormal[ 3 ] );
 
     // Compute the 2D extruded poly data from a surface and a translation vector
     static void GetExtrudedPolyData( vtkPolyData* surfacePolyData, vtkPolyData* extrudedPolyData, double surfaceNormal[ 3 ], double extrusionDepth );

@@ -68,11 +68,11 @@ public:
   // lower-level access to functionality for making a closed surface model
   static bool UpdateClosedSurfaceModel( vtkMRMLMarkupsFiducialNode* markupsNode, vtkMRMLModelNode* modelNode,
       int surfaceType = vtkMRMLMarkupsToModelNode::Delaunay, bool smoothing = true, bool forceConvex = false,
-      double delaunayAlpha = 0.0, bool cleanMarkups = true, double extrusionDepth = 10.0 );
+      double delaunayAlpha = 0.0, bool cleanMarkups = true, double extrusionDepth = 10.0, bool forcePlanar = false );
 
   static bool UpdateClosedSurfaceModel( vtkPoints* controlPoints, vtkPolyData* polyData,
       int surfaceType = vtkMRMLMarkupsToModelNode::Delaunay, bool smoothing = true, bool forceConvex = false,
-      double delaunayAlpha = 0.0, bool cleanMarkups = true, double extrusionDepth = 10.0 );
+      double delaunayAlpha = 0.0, bool cleanMarkups = true, double extrusionDepth = 10.0, bool forcePlanar = false );
 
   // Lower-level access to functionality for making a curve model.
   // If tubeRadius<=0.0 then a line will be created instead of a tube.

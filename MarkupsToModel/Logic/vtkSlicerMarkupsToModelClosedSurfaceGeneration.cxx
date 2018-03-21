@@ -6,6 +6,7 @@
 #include <vtkAppendPolyData.h>
 #include <vtkButterflySubdivisionFilter.h>
 #include <vtkCellArray.h>
+#include <vtkCenterOfMass.h>
 #include <vtkCleanPolyData.h>
 #include <vtkCubeSource.h>
 #include <vtkDataSetSurfaceFilter.h>
@@ -172,7 +173,7 @@ bool vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateDelaunayClosedSurfa
 
 //------------------------------------------------------------------------------
 bool vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateExtrusionClosedSurfaceModel(vtkPoints* inputPoints, vtkPolyData* outputPolyData,
-  double extrusionDepth)
+  double extrusionDepth, bool forcePlanar)
 {  
   if (inputPoints == NULL)
   {
@@ -213,14 +214,21 @@ bool vtkSlicerMarkupsToModelClosedSurfaceGeneration::GenerateExtrusionClosedSurf
     return GenerateDelaunayClosedSurfaceModel(inputPoints, outputPolyData, 0.0, false, true); // TODO: Should this be handled otherwise?
   }
 
-  // Compute the poly data on the collected surface of the model
-  vtkSmartPointer<vtkPolyData> surfacePolyData = vtkSmartPointer<vtkPolyData>::New();
-  GetSurfacePolyData(inputPoints, surfacePolyData);
-
   // Find the normal vector to the surface (this is the direction in which we will extrude)
   double surfaceNormal[3] = { 0.0, 0.0, 0.0 }; // temporary values
   const int PLANE_NORMAL_INDEX = 2; // The plane normal has the smallest variation, and is stored in the last column
   GetNthColumnInMatrix(boundingAxesToRasTransformMatrix, PLANE_NORMAL_INDEX, surfaceNormal);
+
+  // Compute the poly data on the collected surface of the model
+  vtkSmartPointer<vtkPolyData> surfacePolyData = vtkSmartPointer<vtkPolyData>::New();
+  if (forcePlanar)
+  {
+    GetPlanarSurfacePolyData(inputPoints, surfacePolyData, surfaceNormal);
+  }
+  else
+  {
+    GetSurfacePolyData(inputPoints, surfacePolyData);
+  }
 
   // Compute the poly data that is on the extruded surface
   vtkSmartPointer<vtkPolyData> extrudedPolyData = vtkSmartPointer<vtkPolyData>::New();
@@ -473,6 +481,43 @@ void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetSurfacePolyData(vtkPoint
 
   cleanSurfaceFilter->Update();  
   surfacePolyData->DeepCopy(cleanSurfaceFilter->GetOutput());
+}
+
+//------------------------------------------------------------------------------
+void vtkSlicerMarkupsToModelClosedSurfaceGeneration::GetPlanarSurfacePolyData(vtkPoints* inputPoints, vtkPolyData* surfacePolyData, double surfaceNormal[ 3 ])
+{
+  vtkNew<vtkPolyData> surfacePointsPolyData;
+  surfacePointsPolyData->SetPoints(inputPoints);
+
+  // Compute the centre of mass
+  vtkNew<vtkCenterOfMass> centerOfMassFilter;
+  centerOfMassFilter->SetInputData(surfacePointsPolyData.GetPointer());
+  centerOfMassFilter->SetUseScalarsAsWeights(false);
+  centerOfMassFilter->Update();
+  double centerOfMass[3] = {0.0, 0.0, 0.0};
+  centerOfMassFilter->GetCenter(centerOfMass);
+
+  // Find the projection of each point onto the plane of best fit (defined by center of mass and normal vector)
+  vtkNew<vtkPoints> planePoints;
+  for (int i = 0; i < inputPoints->GetNumberOfPoints(); i++)
+  {
+    double currentPoint[3] = {0.0, 0.0, 0.0};
+    inputPoints->GetPoint(i, currentPoint);
+    double currentRelativePoint[3] = {0.0, 0.0, 0.0};
+    vtkMath::Subtract(currentPoint, centerOfMass, currentRelativePoint);
+    double normalLength = vtkMath::Dot(currentRelativePoint, surfaceNormal);
+    double normalComponent[3] = {surfaceNormal[0], surfaceNormal[1], surfaceNormal[2]};
+    vtkMath::MultiplyScalar(normalComponent, normalLength);
+    double currentRelativePlanePoint[3] = {0.0, 0.0, 0.0};
+    vtkMath::Subtract(currentRelativePoint, normalComponent, currentRelativePlanePoint);
+    double currentPlanePoint[3] = {0.0, 0.0, 0.0};
+    vtkMath::Add(centerOfMass, currentRelativePlanePoint, currentPlanePoint);
+
+    planePoints->InsertNextPoint(currentPlanePoint);
+  }
+
+  // Use the regular surface polydata method on the projected points
+  GetSurfacePolyData(planePoints.GetPointer(), surfacePolyData);
 }
 
 //------------------------------------------------------------------------------
