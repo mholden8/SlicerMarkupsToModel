@@ -452,6 +452,9 @@
       </item>
       <item row="8" column="1">
        <widget class="QDoubleSpinBox" name="ExtrusionDepthDoubleSpinBox">
+        <property name="toolTip">
+         <string>Controls the depth of surface extrusion.</string>
+        </property>
         <property name="minimum">
          <double>-999.990000000000009</double>
         </property>
@@ -627,6 +630,9 @@
          </property>
          <item row="0" column="0">
           <widget class="QRadioButton" name="DelaunayRadioButton">
+           <property name="toolTip">
+            <string>Delaunay Surface. The closed surface model will enclose all points.</string>
+           </property>
            <property name="text">
             <string>Delaunay</string>
            </property>
@@ -637,6 +643,9 @@
          </item>
          <item row="0" column="1">
           <widget class="QRadioButton" name="ExtrusionRadioButton">
+           <property name="toolTip">
+            <string>Extruded Surface. The closed surface will be extruded from a 2D surface fitting the points.</string>
+           </property>
            <property name="text">
             <string>Extrusion</string>
            </property>
@@ -654,6 +663,9 @@
       </item>
       <item row="9" column="1">
        <widget class="QCheckBox" name="ForcePlanarCheckBox">
+        <property name="toolTip">
+         <string>Force fit a planar surface to the points for extrusion.</string>
+        </property>
         <property name="text">
          <string/>
         </property>
